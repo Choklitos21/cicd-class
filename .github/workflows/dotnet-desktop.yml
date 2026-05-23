@@ -1,0 +1,77 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+permissions:
+  packages: write
+  contents: read
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2  # Configurar el soporte para Buildx, que permite construir imágenes de manera optimizada
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4  # Habilitar el caching para las capas de Docker y evitar que se reconstruyan siempre
+
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2  # Hacer login en GHCR usando las credenciales de GitHub
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: Build and push Docker image
+        run: |
+          REPO_LOWERCASE=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+
+          if [ -d "CICDTesting" ] && [ ! -d "cicdtesting" ]; then
+            mv CICDTesting cicdtesting
+          fi
+
+          # Construir la imagen Docker usando el Dockerfile
+          docker build -f cicdtesting/Dockerfile -t ghcr.io/$REPO_LOWERCASE:latest cicdtesting
+
+          # Subir la imagen construida a GHCR
+          docker push ghcr.io/$REPO_LOWERCASE:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: 161.97.136.42
+          username: root
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            echo "Conexión exitosa al VPS"
+
+            REPO_NAME="${{ github.event.repository.name }}"
+            REPO_LOWERCASE=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            REPO_OWNER_LOWERCASE=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+            docker login ghcr.io -u "$REPO_OWNER_LOWERCASE" -p ${{ secrets.TOKEN }}
+            docker pull ghcr.io/$REPO_LOWERCASE:latest
+            docker stop $REPO_NAME || true
+            docker rm $REPO_NAME || true
+
+            docker run -d --name $REPO_NAME \
+                         -p 8089:8080 \
+                         ghcr.io/$REPO_LOWERCASE:latest
