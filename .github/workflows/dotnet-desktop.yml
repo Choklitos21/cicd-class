@@ -38,12 +38,12 @@ jobs:
         run: |
           REPO_LOWERCASE=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
-          if [ -d "CICDTesting" ] && [ ! -d "cicdtesting" ]; then
-            mv CICDTesting cicdtesting
+          if [ -d "cicd-class" ] && [ ! -d "cicd-class" ]; then
+            mv cicd-class cicd-class
           fi
 
           # Construir la imagen Docker usando el Dockerfile
-          docker build -f cicdtesting/Dockerfile -t ghcr.io/$REPO_LOWERCASE:latest cicdtesting
+          docker build -f cicd-class/Dockerfile -t ghcr.io/$REPO_LOWERCASE:latest cicd-class
 
           # Subir la imagen construida a GHCR
           docker push ghcr.io/$REPO_LOWERCASE:latest
